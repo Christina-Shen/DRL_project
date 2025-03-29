@@ -22,6 +22,9 @@ here's the project description
 - Values converge to the center: Terminal states are set with center symmetric conditions. With identical initial values and weights, when policy iterates, the primary direction also points to the center, causing values to converge toward the center.
 - Differences between decay_gamma = 0.9 and decay_gamma = 0.1: With smaller decay gamma, final converged absolute values are smaller. This is because during value updates, weights for other direction values are smaller. Even though all grids initially have value 0, since rewards in all four directions are -1, each grid value becomes negative during iteration. With larger gamma_decay, weights for other values increase more, resulting in larger absolute converged values.
 
+
+
+
 # 2. using gym taxi-v3 compare Q-Learning with SARSA
 ### Environment description
 - Observation space has 500 states: taxi row position (25) × passenger location (4) × passenger on taxi (2) × destination location (4)
@@ -213,22 +216,83 @@ Algorithm 1 Soft Actor-Critic
 
 ### Improvement Methods
 
-#### 1.Roll Out
+#### Roll Out
 - Found that this environment requires continuous state space with sufficient memory buffer for sequential data (state, action, reward, next state) to update effectively
 - Regarding memory buffer batch size:
   - Higher sizes initially speed up training
   - Later stages show learning reward fluctuations and potential overfitting
   - Initial batch size of 70, reduced to 32 in later stages showed better training results
 
-#### 2. Prioritized Experience
+####  Prioritized Experience
 - During data updates, batches with highest TD error are prioritized as network training data
 - During training, memory with highest TD error is directly selected rather than random sampling
 - After processing, these batches are deleted and other data selected in subsequent updates
 - After a fixed size of memory usage, memory is reset to collect new data with large TD errors
 
-#### 3. Reducing log_pi Entropy Impact
+####  Reducing log_pi Entropy Impact
 - Observed that during later training stages, log_pi (action entropy maximization factor) affects model generalizability
 - Weights for this consideration were reduced
 
 ###  Results
 - Performance: 400-800 score per episode
+
+# 7. NeurIPS 2019 challenge-learn to move
+ Learn to Move: Walk Around (“<Student_ID>_hw4_<train|test>.py”)
+This is a NeurIPS 2019 challenge. In this challenge, your task is to develop a
+controller for a physiologically plausible 3D human model to move (walk or run)
+following velocity commands with minimum effort.
+![image](https://github.com/user-attachments/assets/71c1cf22-b032-4e3d-83cb-54be6e5e2a08)
+
+### Training Method: Soft Actor-Critic
+
+- The algorithm implemented is Soft Actor-Critic (SAC), with implementation as shown below:
+
+```
+Algorithm 1 Soft Actor-Critic
+    Initialize parameter vectors ψ, ψ̄, θ, φ.
+    for each iteration do
+        for each environment step do
+            at ~ πφ(at|st)
+            st+1 ~ p(st+1|st, at)
+            D ← D ∪ {(st, at, r(st, at), st+1)}
+        end for
+        for each gradient step do
+            ψ ← ψ - λV∇ψJV(ψ)           # V critic network
+            θi ← θi - λQ∇θiJQ(θi) for i ∈ {1, 2}  # 2 Q critic networks
+            φ ← φ - λπ∇φJπ(φ)
+            ψ̄ ← τψ + (1 − τ)ψ̄           # Target V critic network
+        end for
+    end for
+```
+
+### Network Architecture and Functions
+
+- **Policy Network**: Responsible for determining which action to take given a state (observation). It outputs the predicted value using two Q-value networks. It estimates the value function for each state.
+- **Action Entropy**: Maintains action randomness/entropy. The algorithm calculates the probability of an action being selected in a given state. During training, the action's policy network generates a mean with a log_std network that produces log_std. Based on these two values, a normal distribution is sampled to select an action, and the action's probability under this distribution is calculated as log for entropy.
+- **Parameter Update Process**: During parameter updates, 256 data records are extracted from replay memory. Each record contains (State, action, reward, next_state). The three networks are updated as follows:
+
+#### Q-Value Network
+- Minimizes the Q network(state,action) prediction error against target value
+- Target value calculation: reward + target_network(next_state)
+- This minimizes Q network error to ensure accurate state/action value predictions
+## Improved Training Methods
+
+### Skip Frame
+- During training, when sampling from replay memory, state is input to policy network to generate action
+- If environment responds slowly, collect reward/next state and calculate various possible responses
+  - Most states have consistent possible next states, requiring occasional random exploration
+  - Some states with unstable next state transitions benefit from more exploration and testing
+
+### Prioritized Memory Replay
+- When sampling from replay memory, calculate Q value and target value difference (td error)
+- After update, records with highest td error are kept in memory
+- During subsequent updates, samples with highest error are prioritized
+- After several updates, memory is reset to collect new high td error data
+
+### TD Error Priority
+- Records with high TD error are prioritized for training, improving model speed
+- Knowledge expansion for unfamiliar states is prioritized for better rewards
+
+## Results
+- Maximum score: 21-22
+- Average score: 13-15
