@@ -113,3 +113,122 @@ here's the project description
     - Where G_t represents future feedback, corresponding to reward * gamma^(number of steps from current to end)
 ### Results
 - p1 wins: 51.0%, p1 ties: 0.0%
+- 
+# 5.Deep Q-Network Implementation and Optimization Techniques in Gym-supermarion
+
+![image](https://github.com/user-attachments/assets/0b31dfab-91a0-41e0-b678-1b483418a289)
+
+### Double DQN Implementation
+
+- **Double DQN Architecture**:
+  ![image](https://github.com/user-attachments/assets/d60be0f6-76fe-4973-a476-5fddb0acce69)
+
+- **Policy/Target Network Update Method** based on the following formulas:
+
+  ![Formula: y_t = r_t + γQ_θ'(s_{t+1}, arg max_{a'} Q_θ(s_{t+1}, a'))]
+
+  ![Formula: θ = θ - α \frac{1}{N} \sum \nabla_θQ(s_i, a_i)(y_i - Q(s_i, a_i))]
+
+  - Q_θ' is the target network, Q_θ is the policy network
+  - Action selection (`arg max`) is calculated using the latest state for all actions to find which action has the highest Q value ('a')
+  - State(t+1) is input to target network + reward becomes TD_target
+  - TD error is defined as TD_target - Q(s_t, a_t), using TD error to update target network and policy network parameters
+
+- Experiments show Double DQN results have significant improvement, but may change depending on reward settings and prioritized memory implementations
+
+ ### Prioritized Memory Optimization
+
+- **Standard Implementation**: When storing actions in memory, training randomly selects batch size data to update Q-network
+- **Prioritized Memory**: Uses normalized TD_error results. When randomly selecting batch size data, higher TD_error samples have higher selection probability, prioritizing parameter updates for states with larger TD targets
+
+### Environment Wrapper Methods
+
+- Main functionality divided into the following operations:
+  - Using Gym's PyWrappers JoypadSpace module to simplify environment and action space
+  - Downscaling environment pixel count by converting RGB information to grayscale and reducing environment visual field
+  - Skip multiple frames or steps (frame skip) - representing one training action with multiple game steps
+  - Normalizing environment reward results
+
+### Other Optimization Methods During Training
+
+- **Exploration Strategy**: During exploration, setting high probability for up, down, left, and right movements
+  - Current implementation finds exploration tends to be confined, with rewards slowly increasing but not significantly even after 1000+ episodes
+  - During training, agents often reach high water levels but can't progress, so tested restricting similar consecutive actions by setting 0.9 probability that state.next should not equal consecutive step
+  - This prevents agents from staying in the same position without change, forcing random exploration
+  - Found that backtracking was common in initial episodes, as consecutive action similarity couldn't be effectively measured
+
+- **Reducing Exploration Rate**: Exploration rate decreases with each episode using epsilon decay
+  - Originally all episodes used 0.99975 rate, but testing showed better results with faster decline:
+  - Epsilon = 0.01 + (1 - episode) * exp(-1 * (episode + 1) / 100)
+  - This formula produced much better effects
+
+- **Environment Reward Calculation Improvement**:
+  - Original reward adds points for new sections discovered during actions
+  - Can add incentives for actions that increase score
+  - Rewards multiplied by 40 to increase model stability
+  - This approach can simulate achievement-like reward calculations and significantly improve training effectiveness
+
+### Training Results
+
+- First week: Successful progress through levels
+- Second week: Reached challenging areas but encountered failures
+
+# 6. Soft actor critic implement in gym-racing car
+![image](https://github.com/user-attachments/assets/32972831-b670-44b7-93a0-1d88d7004643)
+
+This environment is a simple continuous control task for a single agent. The state consists of
+96x96x3 pixels representing the agent's surroundings. The agent receives a constant penalty
+of -0.1 every timestep, and a reward of +1000/num_tiles for each unique tile it
+visits. The motivation behind this reward structure is to provide a sufficiently dense reward
+signal for the agent to learn the basic driving skills, while encouraging it to explore and visits many tiles as possible. 
+
+### Main Training Method: SAC (Soft Actor-Critic)
+
+```
+Algorithm 1 Soft Actor-Critic
+    Initialize parameter vectors ψ, ψ̄, θ, φ.
+    for each iteration do
+        for each environment step do
+            at ~ πφ(at|st)
+            st+1 ~ p(st+1|st, at)
+            D ← D ∪ {(st, at, r(st, at), st+1)}
+        end for
+        for each gradient step do
+            ψ ← ψ - λV∇ψJV(ψ)
+            θi ← θi - λQ∇θiJQ(θi) for i ∈ {1, 2}
+            φ ← φ - λπ∇φJπ(φ)
+            ψ̄ ← τψ + (1 − τ)ψ̄
+        end for
+    end for
+```
+
+### Network Architecture
+- The algorithm utilizes three essential networks:
+  - Policy network (strategy network)
+  - Critic network
+  - Target Q-network
+- This implementation uses Q-network and target network as counterparts
+- **Target Network Update**: Minimizes the difference between next q value and critic network/q network to ensure q network correctly predicts state/action values
+- **Policy Network Update**: Maximizes (q1/q2) - target/Q network estimate. Differs from original actor-critic by considering log pi for minimizing action probability distribution log when selecting specific actions, maintaining action diversity (entropy concept)
+
+### Improvement Methods
+
+#### 1.Roll Out
+- Found that this environment requires continuous state space with sufficient memory buffer for sequential data (state, action, reward, next state) to update effectively
+- Regarding memory buffer batch size:
+  - Higher sizes initially speed up training
+  - Later stages show learning reward fluctuations and potential overfitting
+  - Initial batch size of 70, reduced to 32 in later stages showed better training results
+
+#### 2. Prioritized Experience
+- During data updates, batches with highest TD error are prioritized as network training data
+- During training, memory with highest TD error is directly selected rather than random sampling
+- After processing, these batches are deleted and other data selected in subsequent updates
+- After a fixed size of memory usage, memory is reset to collect new data with large TD errors
+
+#### 3. Reducing log_pi Entropy Impact
+- Observed that during later training stages, log_pi (action entropy maximization factor) affects model generalizability
+- Weights for this consideration were reduced
+
+###  Results
+- Performance: 400-800 score per episode
